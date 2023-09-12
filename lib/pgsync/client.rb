@@ -94,6 +94,7 @@ module PgSync
       o.boolean "--fail-fast", "stop on the first failed table", default: false
       o.boolean "--no-rules", "don't apply data rules", default: false
       o.boolean "--no-sequences", "don't sync sequences", default: false
+      o.boolean "--no-triggers", "don't sync triggers", default: false
 
       # not shown in help
       # o.separator ""

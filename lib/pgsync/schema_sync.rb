@@ -66,12 +66,55 @@ module PgSync
 
     def run_command(dump_command, restore_command)
       err_r, err_w = IO.pipe
-      Open3.pipeline_start(dump_command, restore_command, err: err_w) do |wait_thrs|
-        err_w.close
-        err_r.each do |line|
-          yield line
+
+      if @opts[:no_triggers]
+        restore_list_command = ['pg_restore', '--list']
+        grep_command = ['grep', '-v', 'TRIGGER']
+
+        tmpfile = Tempfile.new('no_triggers')
+
+        list_result = run_result = false
+
+        begin
+          # list TOC entries (except triggers) to temporary file
+          list_result = Open3.pipeline_r(dump_command, restore_list_command, grep_command, err: err_w) do |last_stdout, wait_thrs|
+            err_w.close
+            err_r.each do |line|
+              yield line
+            end
+
+            last_stdout.each do |line|
+              yield line if @opts[:debug]
+              tmpfile.write(line)
+            end
+
+            wait_thrs.all? { |t| t.value.success? }
+          end
+
+          # modify restore_command
+          rest_command = restore_command.concat(['--use-list', tmpfile.path])
+
+          run_result = Open3.pipeline_start(rest_command, err: err_w) do |wait_thrs|
+            err_w.close
+            err_r.each do |line|
+              yield line
+            end
+            wait_thrs.all? { |t| t.value.success? }
+          end
+        ensure
+          tmpfile.close
+          tmpfile.unlink   # deletes the temp file
         end
-        wait_thrs.all? { |t| t.value.success? }
+
+        list_result && run_result
+      else
+        Open3.pipeline_start(dump_command, restore_command, err: err_w) do |wait_thrs|
+          err_w.close
+          err_r.each do |line|
+            yield line
+          end
+          wait_thrs.all? { |t| t.value.success? }
+        end
       end
     end
 
@@ -84,8 +127,7 @@ module PgSync
     end
 
     def dump_command
-      # "--schema-only"
-      cmd = ["pg_dump", "-Fc", "--verbose", "--no-owner", "--no-acl"]
+      cmd = ["pg_dump", "-Fc", "--schema-only", "--verbose", "--no-owner", "--no-acl"]
       if specify_tables?
         @tasks.each do |task|
           cmd.concat(["-t", task.quoted_table])
@@ -97,7 +139,6 @@ module PgSync
     def restore_command
       cmd = ["pg_restore", "--verbose", "--no-owner", "--no-acl", "--clean"]
       cmd << "--if-exists" if supports_if_exists?
-      cmd << "--disable-triggers" if @opts[:disable_user_triggers]
       cmd.concat(["-d", @destination.url])
     end
 
