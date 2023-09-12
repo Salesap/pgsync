@@ -34,13 +34,6 @@ module PgSync
       # if spinner, capture lines to show on error
       lines = []
 
-      if opts[:debug]
-        log 'Dump command:'
-        log dump_command.join(' ')
-        log 'Restore command:'
-        log restore_command.join(' ')
-      end
-
       success =
         run_command(dump_command, restore_command) do |line|
           if show_spinner
@@ -67,64 +60,52 @@ module PgSync
     def run_command(dump_command, restore_command)
       err_r, err_w = IO.pipe
 
+      tmpfile = Tempfile.new('no_triggers')
+      rest_command = restore_command
+
       if @opts[:no_triggers]
+        # get temporary file with TOC content
         restore_list_command = ['pg_restore', '--list']
         grep_command = ['grep', '-v', 'TRIGGER']
 
-        tmpfile = Tempfile.new('no_triggers')
+        list_err_r, list_err_w = IO.pipe
 
-        list_result = run_result = false
-
-        begin
-          list_err_r, list_err_w = IO.pipe
-
-          # list TOC entries (except triggers) to temporary file
-          list_result = Open3.pipeline_r(dump_command, restore_list_command, grep_command, err: list_err_w) do |last_stdout, wait_thrs|
-            list_err_w.close
-            list_err_r.each do |line|
-              yield line
-            end
-
-            last_stdout.each do |line|
-              yield line if @opts[:debug]
-              tmpfile.write(line)
-            end
-
-            wait_thrs.all? { |t| t.value.success? }
-          end
-
-          tmpfile.close # to flush data on disk
-
-          # modify restore_command
-          rest_command = restore_command.concat(['--use-list', tmpfile.path])
-
-          yield "Restore command: #{rest_command}" if @opts[:debug]
-
-          run_result = Open3.pipeline_start(rest_command, err: err_w) do |wait_thrs|
-            err_w.close
-            err_r.each do |line|
-              yield line
-            end
-            wait_thrs.all? { |t| t.value.success? }
-          end
-          yield "debug1"
-        ensure
-          yield "debug2"
-          tmpfile.unlink   # deletes the temp file
-        end
-
-        yield "List result: #{list_result} Run result: #{run_result}" if @opts[:debug]
-
-        list_result && run_result
-      else
-        Open3.pipeline_start(dump_command, restore_command, err: err_w) do |wait_thrs|
-          err_w.close
-          err_r.each do |line|
+        # list TOC entries (except triggers) to temporary file
+        Open3.pipeline_r(dump_command, restore_list_command, grep_command, err: list_err_w) do |last_stdout, wait_thrs|
+          list_err_w.close
+          list_err_r.each do |line|
             yield line
           end
+
+          last_stdout.each do |line|
+            yield line if @opts[:debug]
+            tmpfile.write(line)
+          end
+
           wait_thrs.all? { |t| t.value.success? }
         end
+
+        tmpfile.close # to flush data on disk
+
+        # modify restore_command
+        rest_command = restore_command.concat(['--use-list', tmpfile.path])
       end
+
+      if @opts[:debug]
+        yield "Dump command: #{dump_command.join(' ')}"
+        yield "Restore command: #{rest_command.join(' ')}"
+      end
+
+      Open3.pipeline_start(dump_command, rest_command, err: err_w) do |wait_thrs|
+        err_w.close
+        err_r.each do |line|
+          yield line
+        end
+        wait_thrs.all? { |t| t.value.success? }
+      end
+    ensure
+      tmpfile.close
+      tmpfile.unlink   # deletes the temp file
     end
 
     # --if-exists introduced in Postgres 9.4
