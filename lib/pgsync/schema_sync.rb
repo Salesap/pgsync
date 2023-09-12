@@ -96,6 +96,8 @@ module PgSync
           # modify restore_command
           rest_command = restore_command.concat(['--use-list', tmpfile.path])
 
+          yield "Restore command: #{rest_command}" if @opts[:debug]
+
           run_result = Open3.pipeline_start(rest_command, err: err_w) do |wait_thrs|
             err_w.close
             err_r.each do |line|
