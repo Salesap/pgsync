@@ -107,9 +107,13 @@ module PgSync
             end
             wait_thrs.all? { |t| t.value.success? }
           end
+          yield "debug1"
         ensure
+          yield "debug2"
           tmpfile.unlink   # deletes the temp file
         end
+
+        yield "List result: #{list_result} Run result: #{run_result}" if @opts[:debug]
 
         list_result && run_result
       else
