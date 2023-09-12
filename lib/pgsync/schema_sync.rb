@@ -33,6 +33,14 @@ module PgSync
 
       # if spinner, capture lines to show on error
       lines = []
+
+      if opts[:debug]
+        log 'Dump command:'
+        log dump_command
+        log 'Restore command:'
+        log restore_command
+      end
+
       success =
         run_command(dump_command, restore_command) do |line|
           if show_spinner
@@ -88,6 +96,7 @@ module PgSync
     def restore_command
       cmd = ["pg_restore", "--verbose", "--no-owner", "--no-acl", "--clean"]
       cmd << "--if-exists" if supports_if_exists?
+      cmd << "--disable-triggers" if @opts[:disable_user_triggers]
       cmd.concat(["-d", @destination.url])
     end
 
