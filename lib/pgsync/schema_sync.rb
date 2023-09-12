@@ -36,9 +36,9 @@ module PgSync
 
       if opts[:debug]
         log 'Dump command:'
-        log dump_command
+        log dump_command.join(' ')
         log 'Restore command:'
-        log restore_command
+        log restore_command.join(' ')
       end
 
       success =
@@ -84,7 +84,8 @@ module PgSync
     end
 
     def dump_command
-      cmd = ["pg_dump", "-Fc", "--verbose", "--schema-only", "--no-owner", "--no-acl"]
+      # "--schema-only"
+      cmd = ["pg_dump", "-Fc", "--verbose", "--no-owner", "--no-acl"]
       if specify_tables?
         @tasks.each do |task|
           cmd.concat(["-t", task.quoted_table])
