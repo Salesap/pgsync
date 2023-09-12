@@ -76,10 +76,12 @@ module PgSync
         list_result = run_result = false
 
         begin
+          list_err_r, list_err_w = IO.pipe
+
           # list TOC entries (except triggers) to temporary file
-          list_result = Open3.pipeline_r(dump_command, restore_list_command, grep_command, err: err_w) do |last_stdout, wait_thrs|
-            err_w.close
-            err_r.each do |line|
+          list_result = Open3.pipeline_r(dump_command, restore_list_command, grep_command, err: list_err_w) do |last_stdout, wait_thrs|
+            list_err_w.close
+            list_err_r.each do |line|
               yield line
             end
 
