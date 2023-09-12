@@ -93,6 +93,8 @@ module PgSync
             wait_thrs.all? { |t| t.value.success? }
           end
 
+          tmpfile.close # to flush data on disk
+
           # modify restore_command
           rest_command = restore_command.concat(['--use-list', tmpfile.path])
 
@@ -106,7 +108,6 @@ module PgSync
             wait_thrs.all? { |t| t.value.success? }
           end
         ensure
-          tmpfile.close
           tmpfile.unlink   # deletes the temp file
         end
 
